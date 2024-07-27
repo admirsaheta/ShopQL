@@ -1,0 +1,137 @@
+spec = { SOI ~ import* ~ def* ~ EOI }
+
+import = { "import" ~ filename }
+filename = @{ "\"" ~ (!("\n" | "\r\n") ~ char_no_double_quote)* ~ "\"" }
+
+def = _{
+    schema_def |
+    schema_ext |
+    type_def |
+    type_ext |
+    generic_type_def |
+    input_def |
+    input_ext |
+    generic_input_def |
+    enum_def |
+    enum_ext |
+    interface_def |
+    interface_ext |
+    scalar_def |
+    scalar_ext |
+    union_def |
+    union_ext |
+    directive_def
+}
+
+schema_def =       { description? ~ "schema" ~ directive* ~ schema_selection_set }
+schema_ext =       { "extend" ~     "schema" ~ directive* ~ schema_selection_set? }
+    schema_selection_set = { "{" ~ schema_field+ ~ "}"}
+    schema_field = { schema_key ~ ":" ~ identifier }
+    schema_key = @{ "query" | "mutation" | "subscription" }
+generic_type_def = { description_variables? ~ description? ~  "type " ~ identifier ~ directive* ~ "=" ~ modified_ref }
+type_def       = { description_variables? ~ description? ~ "type " ~ identifier ~ generic? ~ implements? ~ directive* ~ type_selection_set }
+type_ext       = { "extend" ~                              "type " ~ identifier ~            implements? ~ directive* ~ type_selection_set? }
+    type_selection_set = { "{" ~ (field_with_args | spread_reference)* ~ "}" }
+generic_input_def = { description_variables? ~  description? ~  "input " ~ identifier ~ directive* ~ "=" ~ modified_ref }
+input_def = { description_variables? ~  description? ~ "input " ~ identifier ~ generic? ~ directive* ~ input_selection_set }
+input_ext = { "extend" ~                               "input " ~ identifier ~           directive* ~ input_selection_set? }
+    input_selection_set = { "{" ~ (field_without_args | spread_reference)* ~ "}" }
+enum_def = { description? ~ "enum " ~ identifier ~ directive* ~ enum_selection_set }
+enum_ext = { "extend"     ~ "enum " ~ identifier ~ directive* ~ enum_selection_set? }
+    enum_selection_set = { "{" ~ (field_without_args_without_value | spread_reference)* ~ "}" }
+interface_def = { description? ~ "interface " ~ identifier ~ implements? ~ directive* ~ interface_selection_set }
+interface_ext = { "extend"     ~ "interface " ~ identifier ~ implements? ~ directive* ~ interface_selection_set? }
+    interface_selection_set = { "{" ~ (spread_reference | field_with_args)* ~ "}" }
+scalar_def = { description? ~ "scalar " ~ identifier ~ directive* }
+scalar_ext = { "extend" ~ "scalar " ~ identifier ~ directive* }
+union_def = { description? ~ "union " ~ identifier ~ directive* ~ "=" ~ identifier ~ ("|" ~ identifier )* }
+union_ext = { "extend"     ~ "union " ~ identifier ~ directive* ~ "="? ~ identifier? ~ ("|" ~ identifier )* }
+
+directive_def = { description? ~"directive" ~ "@" ~ identifier ~ arguments? ~ directive_repeatable? ~ "on" ~ directive_location ~ ("|" ~ directive_location)* }
+    directive_repeatable = @{ "repeatable" }
+    directive_location = @{
+        "QUERY" |
+        "MUTATION" |
+        "SUBSCRIPTION" |
+        "FIELD_DEFINITION" |
+        "FIELD" |
+        "FRAGMENT_DEFINITION" |
+        "FRAGMENT_SPREAD" |
+        "INLINE_FRAGMENT" |
+        "SCHEMA" |
+        "SCALAR" |
+        "OBJECT" |
+        "ARGUMENT_DEFINITION" |
+        "INTERFACE" |
+        "UNION" |
+        "ENUM_VALUE" |
+        "ENUM" |
+        "INPUT_OBJECT" |
+        "INPUT_FIELD_DEFINITION" |
+        "VARIABLE_DEFINITION"
+    }
+
+implements = { "implements" ~ identifier ~ ("&" ~ identifier)* }
+field_with_args = { description? ~ identifier ~ arguments? ~ ":" ~ value_type ~ directive* }
+field_without_args = { description? ~ identifier ~ ":" ~ value_type ~ directive* }
+field_without_args_without_value = { description? ~ identifier ~ directive* }
+
+arguments = { "(" ~ argument* ~ ")" }
+    argument = { description? ~ identifier ~ ":" ~ value_type ~ ("=" ~ (value_data | identifier))? ~ directive* }
+
+function_call = { "(" ~ function_input+ ~ ")" }
+    function_input = { identifier ~ ":" ~ value_data }
+
+description_variables = { "${" ~ description_variable+ ~ "}"  }
+description_variable = { identifier ~ ":" ~ string_data }
+
+description = @{ multiline_description | one_line_description }
+    multiline_description = @{ "\"\"\"" ~ (!"\"\"\"" ~ ANY)*  ~ "\"\"\"" }
+    one_line_description = @{ "\"" ~ (!("\n" | "\r\n") ~ char_no_double_quote)* ~ "\"" }
+
+directive = { "@" ~ identifier ~ function_call? }
+
+required_modifier = @{ "Required" }
+optional_modifier = @{ "Optional" }
+
+expandable_ref = { identifier ~ generic_call? }
+modified_ref = {
+ (required_modifier ~ "<" ~ modified_ref ~ ">") |
+ (optional_modifier ~ "<" ~ modified_ref ~ ">") |
+ expandable_ref
+}
+
+value_type = { value_non_nullable | value_array | value_basic_type }
+
+    value_array = { "[" ~ (value_non_nullable | value_array | value_basic_type) ~ "]" }
+    value_non_nullable = { (value_basic_type | value_array) ~ "!" }
+
+        value_basic_type = { object | basic_type }
+            int = @{ "Int" }
+            float = @{ "Float" }
+            string = @{ "String" }
+            boolean = @{ "Boolean" }
+            basic_type = _{ int | float | boolean | string }
+            object = @{ &((basic_type ~ ASCII_ALPHANUMERIC | "_") | !basic_type) ~ identifier }
+
+value_data = { object_data | list_data | basic_data }
+    object_data = { "{" ~ object_entry* ~ "}" }
+    object_entry = { identifier ~ ":" ~ (basic_data | list_data | object_data) }
+    list_data = { "[" ~ (basic_data | list_data | object_data)* ~ "]" }
+        basic_data = { float_data | int_data | string_data | boolean_data }
+        int_data = @{ ASCII_DIGIT+ }
+        float_data = @{ ASCII_DIGIT+ ~ "." ~ ASCII_DIGIT+}
+        string_data = @{ "\"" ~ char_no_double_quote* ~ "\"" }
+        boolean_data = @{ "false" | "true" }
+
+char_no_double_quote = @{
+    !("\"" | "\\") ~ ANY
+    | "\\" ~ ("\"" | "\\" | "/" | "b" | "f" | "n" | "r" | "t")
+    | "\\" ~ ("u" ~ ASCII_HEX_DIGIT{4})
+}
+identifier = @{ ( ASCII_ALPHA | "_") ~ (ASCII_ALPHANUMERIC | "_" )* }
+generic = { "<" ~ identifier ~ identifier* ~ ">" }
+generic_call = { "<" ~ value_type ~ value_type* ~ ">" }
+spread_reference = { "..." ~ modified_ref }
+WHITESPACE = _{ " " | "," | "\n" | "\r" | "\t" }
+COMMENT = _{ "#" ~ (!"\n" ~ ANY)* ~ "\n" }
